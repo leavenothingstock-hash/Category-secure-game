@@ -1,0 +1,524 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Office Defense — Category Networks</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0a0a0d;--surface:#15141b;--line:#2a2833;--ink:#f4f1ea;--muted:#8e8a99;
+  --amber:#ff8a2b;--copper:#e85d2a;--teal:#27e0c4;--bad:#ff3b6b;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#070709;color:var(--ink);font-family:"Sora",sans-serif;display:flex;flex-direction:column;align-items:center;min-height:100vh;padding:20px}
+.shell{width:100%;max-width:900px}
+.title{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:10px}
+.title h1{font-size:20px;font-weight:800;letter-spacing:-.01em;display:flex;align-items:center;gap:10px}
+.title h1 b{color:var(--amber)}
+.title .sub{font-family:"Space Mono",monospace;font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
+.hud{display:flex;gap:12px;align-items:center;margin-bottom:10px;flex-wrap:wrap}
+.stat{font-family:"Space Mono",monospace;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:8px 12px}
+.stat b{color:var(--ink);font-size:14px}
+.hp-wrap{flex:1;min-width:160px}
+.hp-label{font-family:"Space Mono";font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:4px}
+.hp-bar{height:12px;border:1px solid var(--line);border-radius:99px;background:#1a0f12;overflow:hidden}
+.hp-fill{height:100%;width:100%;background:linear-gradient(90deg,var(--teal),#7fffe0);transition:width .25s,background .25s}
+.stage{position:relative;width:100%;border:1px solid var(--line);border-radius:14px;overflow:hidden;background:#0a0a0d;box-shadow:0 30px 80px -30px #000}
+canvas{display:block;width:100%;aspect-ratio:3/2;cursor:crosshair}
+.overlay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:16px;background:rgba(7,7,9,.86);backdrop-filter:blur(6px);padding:24px;z-index:5;transition:opacity .3s}
+.overlay.hide{opacity:0;pointer-events:none}
+.overlay h2{font-size:clamp(28px,5vw,46px);font-weight:800;letter-spacing:-.02em;line-height:1.05}
+.overlay h2 .g{background:linear-gradient(115deg,var(--amber),var(--teal));-webkit-background-clip:text;background-clip:text;color:transparent}
+.overlay h2 .r{color:var(--bad)}
+.overlay p{color:var(--muted);max-width:440px;font-size:15px;line-height:1.6}
+.overlay .mono{font-family:"Space Mono";font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--amber)}
+.btn{font-family:"Sora";font-weight:700;font-size:16px;padding:14px 30px;border-radius:999px;border:none;cursor:pointer;background:linear-gradient(135deg,var(--amber),var(--copper));color:#1a0e05;transition:.2s}
+.btn:hover{transform:translateY(-2px);box-shadow:0 14px 34px -10px rgba(255,138,43,.6)}
+.tip{font-family:"Space Mono";font-size:11px;color:var(--muted);margin-top:18px;text-align:center;letter-spacing:.04em}
+.dome-ic{width:26px;height:26px}
+</style>
+</head>
+<body>
+<div class="shell">
+  <div class="title">
+    <h1>
+      <svg class="dome-ic" viewBox="0 0 24 24" fill="none"><path d="M3 13a9 9 0 0 1 18 0" stroke="#ff8a2b" stroke-width="2"/><path d="M2 13h20" stroke="#ff8a2b" stroke-width="2"/><circle cx="12" cy="10.5" r="2.4" fill="#27e0c4"/></svg>
+      Office <b>Defense</b>
+    </h1>
+    <span class="sub">Category Networks · Perimeter Sim</span>
+  </div>
+
+  <div class="hud">
+    <div class="stat">Wave <b id="waveN">1</b></div>
+    <div class="stat">Score <b id="scoreN">0</b></div>
+    <div class="stat">Threats <b id="threatN">0</b></div>
+    <div class="hp-wrap">
+      <div class="hp-label">Office Integrity</div>
+      <div class="hp-bar"><div class="hp-fill" id="hpFill"></div></div>
+    </div>
+  </div>
+
+  <div class="stage">
+    <canvas id="game"></canvas>
+    <div class="overlay" id="overlay">
+      <span class="mono" id="ovTag">Briefing</span>
+      <h2 id="ovTitle">Defend the <span class="g">Office</span></h2>
+      <p id="ovText">Intruders are storming the building. Your dome camera tracks your cursor — <b>click to fire a laser</b> and stop them before they breach the office. Clear the wave to secure the building.</p>
+      <button class="btn" id="ovBtn">Deploy Defense →</button>
+      <div class="tip">AIM = move mouse · FIRE = click / tap · Protect the integrity bar</div>
+    </div>
+  </div>
+  <div class="tip">Tip: lead your shots — the laser hits the first intruder in its path.</div>
+</div>
+
+<script>
+const cv=document.getElementById('game'),ctx=cv.getContext('2d');
+let W=900,H=600,DPR=Math.min(window.devicePixelRatio||1,2);
+function fit(){
+  const rect=cv.getBoundingClientRect();
+  W=rect.width; H=rect.width*(2/3);
+  cv.width=W*DPR; cv.height=H*DPR;
+}
+window.addEventListener('resize',fit);
+
+// ---------- state ----------
+let enemies=[],lasers=[],particles=[];
+let mouse={x:W/2,y:H/2};
+let state='menu'; // menu | play | win | lose
+let wave=1,score=0,health=100,maxHealth=100;
+let toSpawn=0,spawnedThisWave=0,spawnTimer=0,spawnGap=1.0;
+let lastFire=0;
+const cam={x:0,y:0,recoil:0,flash:0};
+
+// ---------- audio ----------
+let AC=null;
+function initAudio(){ if(!AC){ try{AC=new (window.AudioContext||window.webkitAudioContext)();}catch(e){} } }
+function beep(type,freq,dur,vol,sweep){
+  if(!AC)return;
+  const o=AC.createOscillator(),g=AC.createGain();
+  o.type=type; o.frequency.value=freq;
+  if(sweep)o.frequency.exponentialRampToValueAtTime(Math.max(40,freq*sweep),AC.currentTime+dur);
+  g.gain.value=vol; g.gain.exponentialRampToValueAtTime(0.0001,AC.currentTime+dur);
+  o.connect(g);g.connect(AC.destination);o.start();o.stop(AC.currentTime+dur);
+}
+// short filtered noise burst — used for the mechanical shutter clicks
+function noise(dur,freq,q,vol,when){
+  if(!AC)return;
+  const t0=AC.currentTime+(when||0);
+  const len=Math.max(1,Math.floor(AC.sampleRate*dur));
+  const buf=AC.createBuffer(1,len,AC.sampleRate);
+  const d=buf.getChannelData(0);
+  for(let i=0;i<len;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/len,2); // decaying click
+  const src=AC.createBufferSource();src.buffer=buf;
+  const bp=AC.createBiquadFilter();bp.type='bandpass';bp.frequency.value=freq;bp.Q.value=q||1;
+  const g=AC.createGain();g.gain.value=vol;
+  src.connect(bp);bp.connect(g);g.connect(AC.destination);
+  src.start(t0);
+}
+const sfx={
+  laser(){ // camera shutter "k-chk": mirror snap + shutter, with a high tick
+    noise(0.035,2600,1.4,0.4,0);
+    noise(0.05,1400,1.0,0.32,0.055);
+    beep('square',2000,0.02,0.025,0.7);
+  },
+  hit(){beep('sawtooth',320,0.12,0.07,0.4);},
+  breach(){beep('sine',120,0.3,0.12,0.5);},
+  win(){[523,659,784,1047].forEach((f,i)=>setTimeout(()=>beep('triangle',f,0.25,0.08),i*120));}
+};
+function speak(text,pitch,rate){
+  try{
+    if(!('speechSynthesis' in window))return;
+    window.speechSynthesis.cancel();
+    const u=new SpeechSynthesisUtterance(text);
+    u.pitch=pitch||0.7; u.rate=rate||0.92; u.volume=1;
+    const vs=window.speechSynthesis.getVoices();
+    const pick=vs.find(v=>/Google US|Daniel|Microsoft|English/i.test(v.name));
+    if(pick)u.voice=pick;
+    window.speechSynthesis.speak(u);
+  }catch(e){}
+}
+
+// ---------- helpers ----------
+const rand=(a,b)=>a+Math.random()*(b-a);
+function officePos(){return {x:W/2, roofY:H-124, domeY:H-144};}
+
+// ---------- spawning / waves ----------
+function startWave(w){
+  wave=w; document.getElementById('waveN').textContent=w;
+  toSpawn=7+w*4;
+  spawnedThisWave=0; spawnTimer=0;
+  spawnGap=Math.max(0.4,1.05-w*0.08);
+  enemies=[];lasers=[];particles=[];
+  document.getElementById('threatN').textContent=toSpawn;
+}
+function spawnEnemy(){
+  const tough=Math.random()< Math.min(0.4,0.08+wave*0.04);
+  const size=tough?22:rand(13,18);
+  enemies.push({
+    x:rand(40,W-40), y:-30,
+    r:size,
+    speed:(tough?28:rand(40,60))+wave*9,
+    drift:rand(-18,18),
+    hp:tough?3:1, maxhp:tough?3:1,
+    tough, phase:Math.random()*6.28, scale:0, dead:false
+  });
+}
+
+// ---------- firing ----------
+function fire(){
+  const now=performance.now();
+  if(now-lastFire<150)return;
+  lastFire=now;
+  const o=officePos();
+  const lx=o.x, ly=o.domeY;
+  const dx=mouse.x-lx, dy=mouse.y-ly, len=Math.hypot(dx,dy)||1;
+  const nx=dx/len, ny=dy/len;
+  // hitscan: nearest enemy along ray
+  let best=null,bestT=Infinity;
+  for(const e of enemies){
+    if(e.dead)continue;
+    const ex=e.x-lx, ey=e.y-ly;
+    const t=ex*nx+ey*ny;            // projection along ray
+    if(t<0)continue;
+    const perp=Math.abs(ex*ny-ey*nx);
+    if(perp<e.r+8 && t<bestT){bestT=t;best=e;}
+  }
+  let endX,endY;
+  if(best){
+    endX=lx+nx*bestT; endY=ly+ny*bestT;
+    best.hp--;
+    sfx.hit();
+    burst(best.x,best.y, best.hp<=0? '#ff3b6b':'#ffcaa0', best.hp<=0?16:6);
+    if(best.hp<=0){best.dead=true; score+=best.tough?25:10; updateScore();}
+  }else{
+    endX=lx+nx*1400; endY=ly+ny*1400;
+  }
+  lasers.push({x1:lx,y1:ly,x2:endX,y2:endY,life:1});
+  cam.recoil=1; cam.flash=1;
+  sfx.laser();
+}
+function burst(x,y,color,n){
+  for(let i=0;i<n;i++){
+    const a=Math.random()*6.28,s=rand(40,180);
+    particles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:1,color,size:rand(2,4)});
+  }
+}
+function updateScore(){document.getElementById('scoreN').textContent=score;}
+
+// ---------- update ----------
+function update(dt){
+  if(state!=='play')return;
+  // spawn
+  if(spawnedThisWave<toSpawn){
+    spawnTimer-=dt;
+    if(spawnTimer<=0){spawnEnemy();spawnedThisWave++;spawnTimer=spawnGap;}
+  }
+  const o=officePos();
+  // enemies
+  for(const e of enemies){
+    if(e.dead)continue;
+    e.scale=Math.min(1,e.scale+dt*4);
+    e.phase+=dt*(6+e.speed*0.04);
+    // move down, drift toward office
+    e.y+=e.speed*dt;
+    e.x+=(e.drift + (o.x-e.x)*0.25)*dt;
+    e.x=Math.max(20,Math.min(W-20,e.x));
+    if(e.y>=o.roofY-6){
+      e.dead=true; health=Math.max(0,health-9); updateHP();
+      sfx.breach(); burst(e.x,e.y,'#ff3b6b',10);
+      cam.flash=0.6;
+    }
+  }
+  enemies=enemies.filter(e=>!(e.dead && e.scale<=0));
+  enemies.forEach(e=>{if(e.dead)e.scale-=dt*5;});
+  enemies=enemies.filter(e=>!(e.dead && e.scale<=0));
+  // lasers + particles
+  lasers.forEach(l=>l.life-=dt*5);
+  lasers=lasers.filter(l=>l.life>0);
+  particles.forEach(p=>{p.x+=p.vx*dt;p.y+=p.vy*dt;p.vy+=260*dt;p.life-=dt*1.8;});
+  particles=particles.filter(p=>p.life>0);
+  cam.recoil=Math.max(0,cam.recoil-dt*6);
+  cam.flash=Math.max(0,cam.flash-dt*4);
+
+  const alive=enemies.filter(e=>!e.dead).length;
+  document.getElementById('threatN').textContent=(toSpawn-spawnedThisWave)+alive;
+
+  // win / lose
+  if(health<=0){ lose(); return; }
+  if(spawnedThisWave>=toSpawn && enemies.length===0){ win(); }
+}
+function updateHP(){
+  const f=document.getElementById('hpFill');
+  f.style.width=health+'%';
+  f.style.background = health>50 ? 'linear-gradient(90deg,#27e0c4,#7fffe0)'
+                    : health>25 ? 'linear-gradient(90deg,#ff8a2b,#ffcf6a)'
+                    : 'linear-gradient(90deg,#ff3b6b,#ff7a9c)';
+}
+
+// ---------- draw ----------
+function drawBg(){
+  ctx.fillStyle='#0a0a0d';ctx.fillRect(0,0,W,H);
+  // glow
+  const g=ctx.createRadialGradient(W/2,H,40,W/2,H,H*0.9);
+  g.addColorStop(0,'rgba(255,138,43,.10)');g.addColorStop(1,'transparent');
+  ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+  // grid
+  ctx.strokeStyle='rgba(91,147,196,.05)';ctx.lineWidth=1;
+  for(let x=0;x<W;x+=44){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke();}
+  for(let y=0;y<H;y+=44){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();}
+}
+function drawOffice(){
+  const o=officePos();
+  const by=o.roofY, bx=W/2-165, bw=330, t=performance.now();
+
+  // ground shadow under building
+  ctx.fillStyle='rgba(0,0,0,.5)';ctx.fillRect(bx-14,H-7,bw+28,7);
+
+  // facade (subtle vertical gradient)
+  const fg=ctx.createLinearGradient(0,by,0,H);
+  fg.addColorStop(0,'#1c1b26');fg.addColorStop(1,'#101017');
+  ctx.fillStyle=fg;ctx.fillRect(bx,by,bw,H-by);
+  // corner pilasters for depth
+  ctx.fillStyle='rgba(255,255,255,.04)';ctx.fillRect(bx,by,10,H-by);
+  ctx.fillStyle='rgba(0,0,0,.28)';ctx.fillRect(bx+bw-10,by,10,H-by);
+
+  // parapet / roof cap (camera mounts here)
+  ctx.fillStyle='#262430';ctx.fillRect(bx-6,by-9,bw+12,11);
+  ctx.fillStyle='rgba(255,255,255,.10)';ctx.fillRect(bx-6,by-9,bw+12,2);
+  // rooftop HVAC unit (detail)
+  ctx.fillStyle='#1a1922';ctx.fillRect(W/2+58,by-20,30,13);
+  ctx.fillStyle='#2a2833';ctx.fillRect(W/2+62,by-24,22,5);
+
+  // illuminated sign band with CATEGORY NETWORKS
+  const sy=by+10, sh=24;
+  ctx.fillStyle='#0c0b11';ctx.fillRect(bx+14,sy,bw-28,sh);
+  ctx.strokeStyle='rgba(255,138,43,.35)';ctx.lineWidth=1;ctx.strokeRect(bx+14,sy,bw-28,sh);
+  ctx.save();
+  ctx.shadowColor='rgba(255,138,43,.9)';ctx.shadowBlur=12;
+  ctx.fillStyle='#ff9d3a';ctx.font='800 15px "Sora",sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+  ctx.fillText('CATEGORY NETWORKS', W/2, sy+sh/2+1);
+  ctx.restore();
+  ctx.strokeStyle='rgba(39,224,196,.5)';ctx.lineWidth=1.5;
+  ctx.beginPath();ctx.moveTo(W/2-92,sy+sh+3);ctx.lineTo(W/2+92,sy+sh+3);ctx.stroke();
+  ctx.textBaseline='alphabetic';
+
+  // window helper
+  function win(wx,wy,ww,wh,lit){
+    ctx.fillStyle='#0a0a10';ctx.fillRect(wx-2,wy-2,ww+4,wh+4);          // frame
+    const wg=ctx.createLinearGradient(0,wy,0,wy+wh);
+    if(lit){wg.addColorStop(0,'rgba(255,210,140,.85)');wg.addColorStop(1,'rgba(230,150,70,.55)');}
+    else{wg.addColorStop(0,'rgba(80,90,110,.35)');wg.addColorStop(1,'rgba(40,46,60,.25)');}
+    ctx.fillStyle=wg;ctx.fillRect(wx,wy,ww,wh);
+    ctx.strokeStyle='rgba(0,0,0,.5)';ctx.lineWidth=1;                  // mullions
+    ctx.beginPath();ctx.moveTo(wx+ww/2,wy);ctx.lineTo(wx+ww/2,wy+wh);
+    ctx.moveTo(wx,wy+wh/2);ctx.lineTo(wx+ww,wy+wh/2);ctx.stroke();
+  }
+  // window grid — row 1 full, row 2 flanks the entrance
+  const cols=6, cw=(bw-44)/cols, ww=cw-12, wh=20;
+  for(let c=0;c<cols;c++){
+    const wx=bx+22+c*cw+6;
+    win(wx, by+44, ww, wh, Math.sin(t/700+c*1.3)>-.2);
+  }
+  for(let c=0;c<cols;c++){
+    if(c===2||c===3)continue; // leave gap for entrance
+    const wx=bx+22+c*cw+6;
+    win(wx, by+74, ww, wh, Math.sin(t/650+c*2.1)>0);
+  }
+
+  // glass entrance with warm glow spill
+  const ew=78, ex=W/2-ew/2, ey=by+70;
+  ctx.fillStyle='rgba(255,180,90,.18)';ctx.beginPath();ctx.ellipse(W/2,H-4,ew*0.9,16,0,0,6.28);ctx.fill();
+  const eg=ctx.createLinearGradient(0,ey,0,H);
+  eg.addColorStop(0,'rgba(255,200,130,.5)');eg.addColorStop(1,'rgba(255,150,70,.85)');
+  ctx.fillStyle=eg;ctx.fillRect(ex,ey,ew,H-ey-4);
+  ctx.fillStyle='#0a0a10';ctx.fillRect(W/2-1.5,ey,3,H-ey-4);          // door split
+  ctx.strokeStyle='#2a2833';ctx.lineWidth=2;ctx.strokeRect(ex,ey,ew,H-ey-4);
+  // awning over the door
+  ctx.fillStyle='#ff8a2b';ctx.fillRect(ex-6,ey-5,ew+12,5);
+
+  // camera mount
+  ctx.save();
+  ctx.translate(o.x, o.domeY + cam.recoil*3);
+  // mount bracket onto the parapet (clears the sign band below)
+  ctx.fillStyle='#2a2833';ctx.fillRect(-6,6,12,10);
+  ctx.fillStyle='#1f1d28';ctx.fillRect(-13,14,26,5);
+  // dome glass
+  const dg=ctx.createRadialGradient(-6,-6,2,0,0,30);
+  dg.addColorStop(0,'#3a3850');dg.addColorStop(.7,'#1c1b26');dg.addColorStop(1,'#0e0e15');
+  ctx.beginPath();ctx.arc(0,0,28,Math.PI,0);ctx.lineTo(28,8);ctx.lineTo(-28,8);ctx.closePath();
+  ctx.fillStyle=dg;ctx.fill();
+  ctx.strokeStyle='#46435a';ctx.lineWidth=2;ctx.stroke();
+  // glass highlight
+  ctx.beginPath();ctx.arc(-8,-8,6,0,6.28);ctx.fillStyle='rgba(255,255,255,.12)';ctx.fill();
+  // lens that looks at mouse
+  const ang=Math.atan2(mouse.y-o.domeY,mouse.x-o.x);
+  const off=8;
+  const px=Math.cos(ang)*off, py=Math.min(2,Math.sin(ang)*off);
+  ctx.beginPath();ctx.arc(0,-2,13,0,6.28);ctx.fillStyle='#0b0b10';ctx.fill();
+  ctx.strokeStyle='#33313f';ctx.lineWidth=2;ctx.stroke();
+  // glowing iris
+  const fl=cam.flash;
+  ctx.beginPath();ctx.arc(px,-2+py,7,0,6.28);
+  ctx.fillStyle=fl>0?`rgba(255,${180-fl*120},120,1)`:'#1a2a2a';ctx.fill();
+  ctx.beginPath();ctx.arc(px,-2+py,7,0,6.28);
+  ctx.strokeStyle=fl>0?'#fff':'#27e0c4';ctx.lineWidth=2+fl*2;ctx.stroke();
+  // pupil
+  ctx.beginPath();ctx.arc(px,-2+py,2.6,0,6.28);ctx.fillStyle='#04110f';ctx.fill();
+  // glow halo when firing
+  if(fl>0){ctx.beginPath();ctx.arc(px,-2+py,16,0,6.28);ctx.fillStyle=`rgba(255,180,90,${fl*0.35})`;ctx.fill();}
+  // recording LED
+  ctx.beginPath();ctx.arc(16,2,2.2,0,6.28);
+  ctx.fillStyle=(Math.sin(performance.now()/300)>0)?'#ff3b6b':'#5a1020';ctx.fill();
+  ctx.restore();
+}
+function drawEnemy(e){
+  const s=e.scale;
+  if(s<=0)return;
+  const bob=Math.sin(e.phase*2)*2;
+  const legA=Math.sin(e.phase)*0.5;
+  ctx.save();
+  ctx.translate(e.x,e.y+bob);
+  ctx.scale(s,s);
+  const col=e.tough?'#b51d4a':'#ff3b6b';
+  // shadow
+  ctx.beginPath();ctx.ellipse(0,e.r+6,e.r*0.8,4,0,0,6.28);ctx.fillStyle='rgba(0,0,0,.35)';ctx.fill();
+  // legs (animated)
+  ctx.strokeStyle=col;ctx.lineWidth=Math.max(3,e.r*0.28);ctx.lineCap='round';
+  ctx.beginPath();ctx.moveTo(-e.r*0.35,e.r*0.5);ctx.lineTo(-e.r*0.35+Math.sin(e.phase)*e.r*0.4,e.r+4);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(e.r*0.35,e.r*0.5);ctx.lineTo(e.r*0.35-Math.sin(e.phase)*e.r*0.4,e.r+4);ctx.stroke();
+  // arms
+  ctx.beginPath();ctx.moveTo(-e.r*0.7,0);ctx.lineTo(-e.r*0.95,Math.cos(e.phase)*e.r*0.4);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(e.r*0.7,0);ctx.lineTo(e.r*0.95,-Math.cos(e.phase)*e.r*0.4);ctx.stroke();
+  // body
+  ctx.beginPath();ctx.roundRect(-e.r*0.7,-e.r*0.7,e.r*1.4,e.r*1.3,e.r*0.4);
+  ctx.fillStyle=col;ctx.fill();
+  ctx.strokeStyle='rgba(0,0,0,.3)';ctx.lineWidth=2;ctx.stroke();
+  // mask band
+  ctx.fillStyle='rgba(0,0,0,.55)';ctx.fillRect(-e.r*0.7,-e.r*0.3,e.r*1.4,e.r*0.42);
+  // angry eyes
+  ctx.fillStyle='#fff';
+  ctx.beginPath();ctx.arc(-e.r*0.28,-e.r*0.1,e.r*0.16,0,6.28);ctx.fill();
+  ctx.beginPath();ctx.arc(e.r*0.28,-e.r*0.1,e.r*0.16,0,6.28);ctx.fill();
+  ctx.fillStyle='#111';
+  ctx.beginPath();ctx.arc(-e.r*0.24,-e.r*0.05,e.r*0.07,0,6.28);ctx.fill();
+  ctx.beginPath();ctx.arc(e.r*0.32,-e.r*0.05,e.r*0.07,0,6.28);ctx.fill();
+  // angry brows
+  ctx.strokeStyle='#fff';ctx.lineWidth=2;
+  ctx.beginPath();ctx.moveTo(-e.r*0.45,-e.r*0.32);ctx.lineTo(-e.r*0.12,-e.r*0.18);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(e.r*0.45,-e.r*0.32);ctx.lineTo(e.r*0.12,-e.r*0.18);ctx.stroke();
+  // hp pips for tough
+  if(e.tough){
+    for(let i=0;i<e.maxhp;i++){
+      ctx.fillStyle=i<e.hp?'#ffd400':'#3a2a2a';
+      ctx.fillRect(-e.r*0.6+i*(e.r*0.6),-e.r*1.1,e.r*0.4,3);
+    }
+  }
+  ctx.restore();
+}
+function drawLasers(){
+  for(const l of lasers){
+    ctx.save();
+    ctx.globalAlpha=l.life;
+    ctx.strokeStyle='rgba(255,180,90,.35)';ctx.lineWidth=9;ctx.lineCap='round';
+    ctx.beginPath();ctx.moveTo(l.x1,l.y1);ctx.lineTo(l.x2,l.y2);ctx.stroke();
+    ctx.strokeStyle='#fff3d8';ctx.lineWidth=3;
+    ctx.beginPath();ctx.moveTo(l.x1,l.y1);ctx.lineTo(l.x2,l.y2);ctx.stroke();
+    ctx.strokeStyle='var';ctx.strokeStyle='#ff8a2b';ctx.lineWidth=1.5;
+    ctx.beginPath();ctx.moveTo(l.x1,l.y1);ctx.lineTo(l.x2,l.y2);ctx.stroke();
+    ctx.restore();
+  }
+}
+function drawParticles(){
+  for(const p of particles){
+    ctx.globalAlpha=Math.max(0,p.life);
+    ctx.fillStyle=p.color;
+    ctx.beginPath();ctx.arc(p.x,p.y,p.size,0,6.28);ctx.fill();
+  }
+  ctx.globalAlpha=1;
+}
+function drawCrosshair(){
+  if(state!=='play')return;
+  ctx.strokeStyle='rgba(39,224,196,.7)';ctx.lineWidth=1.5;
+  ctx.beginPath();ctx.arc(mouse.x,mouse.y,11,0,6.28);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(mouse.x-16,mouse.y);ctx.lineTo(mouse.x-5,mouse.y);
+  ctx.moveTo(mouse.x+5,mouse.y);ctx.lineTo(mouse.x+16,mouse.y);
+  ctx.moveTo(mouse.x,mouse.y-16);ctx.lineTo(mouse.x,mouse.y-5);
+  ctx.moveTo(mouse.x,mouse.y+5);ctx.lineTo(mouse.x,mouse.y+16);ctx.stroke();
+}
+
+// ---------- loop ----------
+let last=performance.now();
+function loop(now){
+  const dt=Math.min(0.05,(now-last)/1000);last=now;
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  update(dt);
+  drawBg();
+  // aim line (subtle)
+  if(state==='play'){
+    const o=officePos();
+    ctx.strokeStyle='rgba(39,224,196,.12)';ctx.lineWidth=1;ctx.setLineDash([4,6]);
+    ctx.beginPath();ctx.moveTo(o.x,o.domeY);ctx.lineTo(mouse.x,mouse.y);ctx.stroke();ctx.setLineDash([]);
+  }
+  enemies.forEach(drawEnemy);
+  drawLasers();
+  drawParticles();
+  drawOffice();
+  drawCrosshair();
+  requestAnimationFrame(loop);
+}
+
+// ---------- screens ----------
+const overlay=document.getElementById('overlay');
+function showOverlay(tag,title,text,btn){
+  document.getElementById('ovTag').textContent=tag;
+  document.getElementById('ovTitle').innerHTML=title;
+  document.getElementById('ovText').innerHTML=text;
+  document.getElementById('ovBtn').textContent=btn;
+  overlay.classList.remove('hide');
+}
+function hideOverlay(){overlay.classList.add('hide');}
+function beginPlay(){ hideOverlay(); state='play'; last=performance.now(); }
+
+function win(){
+  state='win';
+  speak('Your building has been secured.',0.7,0.9);
+  sfx.win();
+  showOverlay('Wave '+wave+' cleared','Building <span class="g">Secured</span>',
+    'All intruders neutralized. The office is safe — for now. Ready for a bigger wave?','Next Wave →');
+}
+function lose(){
+  state='lose';
+  speak('Perimeter breached. Office compromised.',0.6,0.92);
+  showOverlay('Defense failed','Perimeter <span class="r">Breached</span>',
+    'The intruders got through. Reset the perimeter and try again.','Retry Wave →');
+}
+
+document.getElementById('ovBtn').addEventListener('click',()=>{
+  initAudio();
+  if(AC&&AC.state==='suspended')AC.resume();
+  if(state==='menu'){ health=maxHealth;score=0;updateScore();updateHP(); startWave(1); beginPlay(); }
+  else if(state==='win'){ health=Math.min(maxHealth,health+20);updateHP(); startWave(wave+1); beginPlay(); }
+  else if(state==='lose'){ health=maxHealth;score=0;updateScore();updateHP(); startWave(wave); beginPlay(); }
+});
+
+// ---------- input ----------
+function pos(e){
+  const r=cv.getBoundingClientRect();
+  const cx=(e.touches?e.touches[0].clientX:e.clientX)-r.left;
+  const cy=(e.touches?e.touches[0].clientY:e.clientY)-r.top;
+  mouse.x=cx/r.width*W; mouse.y=cy/r.height*H;
+}
+cv.addEventListener('mousemove',pos);
+cv.addEventListener('mousedown',e=>{pos(e);if(state==='play')fire();});
+cv.addEventListener('touchstart',e=>{e.preventDefault();pos(e);if(state==='play')fire();},{passive:false});
+cv.addEventListener('touchmove',e=>{e.preventDefault();pos(e);},{passive:false});
+// preload voices
+if('speechSynthesis' in window){window.speechSynthesis.onvoiceschanged=()=>window.speechSynthesis.getVoices();}
+
+fit(); updateHP(); requestAnimationFrame(loop);
+</script>
+</body>
+</html>
